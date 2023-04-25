@@ -1,39 +1,63 @@
 package app
 
 import (
+	"customer_crud/cmd/app/middleware"
 	"customer_crud/pkg/customers"
+	"customer_crud/pkg/security"
 	"encoding/json"
 	"errors"
+	"github.com/gorilla/mux"
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 )
 
 type Server struct {
-	mux          *http.ServeMux
+	mux          *mux.Router
 	customersSvc *customers.Service
+	securitySvc  *security.Service
 }
 
-func NewServer(mux *http.ServeMux, customersSvc *customers.Service) *Server {
-	return &Server{mux: mux, customersSvc: customersSvc}
+const (
+	GET    = "GET"
+	POST   = "POST"
+	DELETE = "DELETE"
+)
+
+func NewServer(mux *mux.Router, customersSvc *customers.Service, securitySvc *security.Service) *Server {
+	return &Server{mux: mux, customersSvc: customersSvc, securitySvc: securitySvc}
 }
 
 func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	s.mux.ServeHTTP(writer, request)
 }
+
 func (s *Server) Init() {
-	s.mux.HandleFunc("/customers.getById", s.handleGetCustomersByID)
-	s.mux.HandleFunc("/customers.getAll", s.handleGetAllCustomers)
-	s.mux.HandleFunc("/customers.getAllActive", s.handleGetAllActiveCustomers)
-	s.mux.HandleFunc("/customers.save", s.handleSaveCustomer)
-	s.mux.HandleFunc("/customers.removeById", s.handleRemoveCustomerById)
-	s.mux.HandleFunc("/customers.blockById", s.handleBlockCustomerById)
-	s.mux.HandleFunc("/customers.unblockById", s.handleUnblockCustomerById)
+	chMd := middleware.Basic(s.securitySvc.Auth)
+	//s.mux.HandleFunc("/customers.getById", s.handleGetCustomersByID)
+	//s.mux.HandleFunc("/customers.getAll", s.handleGetAllCustomers)
+	//s.mux.HandleFunc("/customers.getAllActive", s.handleGetAllActiveCustomers)
+	//s.mux.HandleFunc("/customers.save", s.handleSaveCustomer)
+	//s.mux.HandleFunc("/customers.removeById", s.handleRemoveCustomerById)
+	//s.mux.HandleFunc("/customers.blockById", s.handleBlockCustomerById)
+	//s.mux.HandleFunc("/customers.unblockById", s.handleUnblockCustomerById)
+	s.mux.Handle("/customers", chMd(http.HandlerFunc(s.handleGetAllCustomers))).Methods(GET)
+	s.mux.Handle("/customers/block/{id}", chMd(http.HandlerFunc(s.handleBlockCustomerById))).Methods(POST)
+	s.mux.Handle("/customers/unblock/{id}", chMd(http.HandlerFunc(s.handleUnblockCustomerById))).Methods(POST)
+	s.mux.Handle("/customers/active", chMd(http.HandlerFunc(s.handleGetAllActiveCustomers))).Methods(GET)
+	//s.mux.HandleFunc("/customers", s.handleGetAllCustomers).Methods(GET)
+	s.mux.Handle("/customers/{id}", chMd(http.HandlerFunc(s.handleGetCustomersByID))).Methods(GET)
+	s.mux.Handle("/customers", chMd(http.HandlerFunc(s.handleSaveCustomer))).Methods(POST)
+	s.mux.Handle("/customers/{id}", chMd(http.HandlerFunc(s.handleRemoveCustomerById))).Methods(DELETE)
 }
 
 func (s *Server) handleGetCustomersByID(writer http.ResponseWriter, request *http.Request) {
-	idParam := request.URL.Query().Get("id")
+	//idParam := request.URL.Query().Get("id")
+	idParam, ok := mux.Vars(request)["id"]
+	if !ok {
+		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
 
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
@@ -115,29 +139,13 @@ func (s *Server) handleGetAllActiveCustomers(writer http.ResponseWriter, request
 }
 
 func (s *Server) handleSaveCustomer(writer http.ResponseWriter, request *http.Request) {
-	idParam := request.FormValue("id")
-	id, err := strconv.ParseInt(idParam, 10, 64)
-	if err != nil {
-		log.Print(err)
-	}
-	customer := &customers.Customer{}
+	var customer *customers.Customer
 
-	customer.ID = id
-	customer.Name = request.FormValue("name")
-	customer.Phone = request.FormValue("phone")
-	if request.FormValue("active") == "true" || request.FormValue("active") == "" {
-		customer.Active = true
-	} else if request.FormValue("active") == "false" {
-		customer.Active = false
-	}
-	layout := "2006-01-02T15:04:05.000Z"
-	if request.FormValue("created") == "" {
-		customer.Created = time.Now()
-	} else {
-		customer.Created, err = time.Parse(layout, request.FormValue("created"))
-	}
+	err := json.NewDecoder(request.Body).Decode(&customer)
+
 	if err != nil {
 		log.Print(err)
+		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
@@ -166,7 +174,11 @@ func (s *Server) handleSaveCustomer(writer http.ResponseWriter, request *http.Re
 }
 
 func (s *Server) handleRemoveCustomerById(writer http.ResponseWriter, request *http.Request) {
-	idParam := request.FormValue("id")
+	idParam, ok := mux.Vars(request)["id"]
+	if !ok {
+		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
 		log.Print(err)
@@ -204,7 +216,11 @@ func (s *Server) handleRemoveCustomerById(writer http.ResponseWriter, request *h
 }
 
 func (s *Server) handleBlockCustomerById(writer http.ResponseWriter, request *http.Request) {
-	idParam := request.FormValue("id")
+	idParam, ok := mux.Vars(request)["id"]
+	if !ok {
+		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
 		log.Print(err)
@@ -242,7 +258,11 @@ func (s *Server) handleBlockCustomerById(writer http.ResponseWriter, request *ht
 }
 
 func (s *Server) handleUnblockCustomerById(writer http.ResponseWriter, request *http.Request) {
-	idParam := request.FormValue("id")
+	idParam, ok := mux.Vars(request)["id"]
+	if !ok {
+		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
 		log.Print(err)

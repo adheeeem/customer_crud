@@ -113,7 +113,7 @@ func (s *Service) Save(ctx context.Context, item *Customer) (*Customer, error) {
 	customer := &Customer{}
 	if item.ID == 0 {
 		err := s.pool.QueryRow(ctx, `
-INSERT INTO customers(name, phone, active, created) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id, name, phone, active, created;`, item.Name, item.Phone, item.Active, item.Created).Scan(&customer.ID, &customer.Name, &customer.Phone, &customer.Active, &customer.Created)
+INSERT INTO customers(name, phone) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id, name, phone, active, created;`, item.Name, item.Phone).Scan(&customer.ID, &customer.Name, &customer.Phone, &customer.Active, &customer.Created)
 		if err != nil {
 			log.Print(err)
 			return nil, err
