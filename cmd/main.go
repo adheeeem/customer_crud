@@ -5,10 +5,12 @@ import (
 	"customer_crud/cmd/app"
 	"customer_crud/pkg/customers"
 	"customer_crud/pkg/security"
+	"encoding/hex"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v4/pgxpool"
 	_ "github.com/jackc/pgx/v4/stdlib"
 	"go.uber.org/dig"
+	"golang.org/x/crypto/bcrypt"
 	"log"
 	"net"
 	"net/http"
@@ -26,6 +28,7 @@ func main() {
 		log.Print(err)
 		os.Exit(1)
 	}
+
 }
 func execute(host string, port string, dsn string) (err error) {
 	deps := []interface{}{
@@ -64,4 +67,24 @@ func execute(host string, port string, dsn string) (err error) {
 	return container.Invoke(func(server *http.Server) error {
 		return server.ListenAndServe()
 	})
+}
+
+func check() {
+	password := "secret"
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+
+	log.Print(hex.EncodeToString(hash))
+
+	err = bcrypt.CompareHashAndPassword(hash, []byte(password))
+
+	if err != nil {
+		log.Print("invalid password")
+		os.Exit(1)
+	}
+
+	print("success")
 }

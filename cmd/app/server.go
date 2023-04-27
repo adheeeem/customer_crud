@@ -18,6 +18,10 @@ type Server struct {
 	securitySvc  *security.Service
 }
 
+type Token struct {
+	Token string `json:"token"`
+}
+
 const (
 	GET    = "GET"
 	POST   = "POST"
@@ -49,6 +53,72 @@ func (s *Server) Init() {
 	s.mux.Handle("/customers/{id}", chMd(http.HandlerFunc(s.handleGetCustomersByID))).Methods(GET)
 	s.mux.Handle("/customers", chMd(http.HandlerFunc(s.handleSaveCustomer))).Methods(POST)
 	s.mux.Handle("/customers/{id}", chMd(http.HandlerFunc(s.handleRemoveCustomerById))).Methods(DELETE)
+
+	s.mux.HandleFunc("/api/customers", s.handleSaveCustomer).Methods(POST)
+	s.mux.HandleFunc("/api/customers/token", s.handleTokenCustomers).Methods(POST)
+	s.mux.HandleFunc("/api/customers/token/validate", s.handleCustomerTokenValidation).Methods(POST)
+
+}
+
+func (s *Server) handleTokenCustomers(writer http.ResponseWriter, request *http.Request) {
+	var customer *customers.Customer
+
+	err := json.NewDecoder(request.Body).Decode(&customer)
+
+	if err != nil {
+		log.Print(err)
+		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	token, err := s.customersSvc.TokenForCustomer(request.Context(), customer.Phone, customer.Password)
+	log.Print(token)
+	if errors.Is(err, customers.ErrNotFound) {
+		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+	data, err := json.Marshal(token)
+	log.Print("TOKEN:", data)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_, err = writer.Write(data)
+
+	if err != nil {
+		log.Print(err)
+		return
+	}
+}
+
+func (s *Server) handleCustomerTokenValidation(writer http.ResponseWriter, request *http.Request) {
+	token := &Token{}
+	err := json.NewDecoder(request.Body).Decode(&token)
+	if err != nil {
+		log.Print(err)
+		http.Error(writer, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	response := s.customersSvc.ValidateCustomerToken(request.Context(), token.Token)
+	log.Print("Response: ", response)
+
+	data, err := json.Marshal(response)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	_, err = writer.Write(data)
+
+	if err != nil {
+		log.Print(err)
+		return
+	}
 }
 
 func (s *Server) handleGetCustomersByID(writer http.ResponseWriter, request *http.Request) {
